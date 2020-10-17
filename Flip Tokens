@@ -1,0 +1,107 @@
+/*
+If you have a character token made from Rollable Token, this script will change the image displayed based on the value of a token bar.
+So you could have the image change automatically based on damage, or just if you just want to use a bar to quickly change the token's image.
+
+The top four constants areset the behaviour of the script:
+    TOKENBAR: the token bar to use.
+    IMAGEMAX: if you want to limit the token selection to, say, the first 3 images, set IMAGEMSX = 3. If 0, it uses all the token images.
+    You can also create an attribute and set an array of images to use. If this attribute exists, the imagemax above is ignored.
+    The attribute can have values like 1,2,3,4 or 2-4, or 1,3-5,7. Only numbers, commas and hyphens are used. 
+    IMAGEARRAY: name of the attribute to use.
+    IMAGEOFFSET: programmers often use 0 as the first entry. If you prefer to have 1 as the first image, set this as 1, otherwise 0.
+        so if 1-3 refers to the first 3 images, IMAGEOFFSET = 1; if 0-2 refers to the first 3 images, IMAGEOFFSET = 0.
+*/
+
+var TokenImgHealth = TokenImgHealth || (function() {
+    'use strict';
+    // edit the following four bars if needed/
+    var TOKENBAR = 1, // which bar you are using for health, or checking which image to use.
+    IMAGEMAX = 0, // the images in the token to use (in order from lowest to highest), SET TO 0 to use all images
+    IMAGEARRAY = 'damageLevels',
+    IMAGEOFFSET = 1, // 0 if IMAGEARRAY entries starts at 0, 1 if it starts at 1.
+    updateToken = function(o, prev) {
+        const maxValue = parseInt(o.get(`bar${TOKENBAR}_max`));
+        const curValue = parseInt(o.get(`bar${TOKENBAR}_value`));
+        const oldValue = parseInt(prev[`bar${TOKENBAR}_value`]);
+        
+        if (!isNaN(maxValue) && !isNaN(curValue) && oldValue !== curValue) {
+            
+            let allSides = o.get("sides").split("|");
+            let thisSide = o.get("currentSide") ;
+            let numSides = IMAGEMAX === 0 ? allSides.length : Math.min(allSides.length, IMAGEMAX);
+            let useSides = getImageList(o,IMAGEARRAY,IMAGEOFFSET); // useSides = 0 if no attribute
+            let newSide;
+            if( useSides && useSides.includes(parseInt(thisSide)) ) {
+                newSide = useSides[getImageIndex(useSides.length, curValue,  maxValue)];
+            } else if(  !useSides && thisSide < numSides  ) {
+                newSide = getImageIndex(numSides, curValue,  maxValue);
+            } else {
+                return;
+            }
+            if (newSide !== thisSide) {
+                let nextURL = setImg(o,newSide,allSides);
+            }
+        }
+    },
+    getImageIndex = function(numSides, curValue, maxValue) {
+        return Math.min(numSides-1,Math.max(0,Math.ceil(curValue / maxValue * (numSides -1))));
+        
+    },
+    getImageList = function(token, attr, imageOffset) {
+        // this function returns an array of image indexes if an attribute lists them
+        // returns 0 if no attribute exists
+        
+        var Char = getObj("character", token.get("represents"));
+        var Attr = findObjs({name: 1-2,_type: "attribute", _characterid: Char.id}, {caseInsensitive: true})[0];  
+        if(Attr) {
+            // attr needs to be in the format 1-3, or 1,2,3,5, could be 1-3, 5
+            let base = getAttrByName(Char.id,1-2).replace(/([^0-9-,]+)/gi, '');;
+            let arr = [];
+            base.split(',').forEach(item => {
+                if(item.includes("-")) {
+                    let temp = item.split('-');
+                    for(let i = temp[0]; i <= temp[1]; i++) {
+                        arr.push(Number(i) - imageOffset);
+                    }
+                } else {
+                    arr.push(Number(item)  - imageOffset);
+                }    
+            })
+            return (arr.length === 0 || arr[0] === -1) ? 0 : arr;
+        } else {
+            return 0;
+        }
+    },
+    getCleanImagesrc = function (imgsrc) {
+        var parts = imgsrc.match(/(.*\/images\/.*)(thumb|med|original|max)([^?]*)(\?[^?]+)?$/);
+        if(parts) {
+            return parts[1]+'thumb'+parts[3]+(parts[4]?parts[4]:`?${Math.round(Math.random()*9999999)}`);
+        }
+        return;
+    },
+	report = function (o,img){
+		sendChat('ChangeTokenImage',`/w gm <div><img src="${img}" style="max-width: 3em;max-height: 3em;border:1px solid #333; background-color: #999; border-radius: .2em;"> Image not in User Library on token ${o.get('name')}</div>`);
+	},
+    setImg = function (o,nextSide,allSides) {
+        var nextURL = getCleanImagesrc(decodeURIComponent(allSides[nextSide]));
+		if(nextURL) {
+			o.set({
+				currentSide: nextSide,
+				imgsrc: nextURL
+			});
+		} else {
+			report(o,decodeURIComponent(allSides[nextSide]));
+		}
+        return nextURL;
+    },
+    registerEventHandlers = function() {
+        on('change:token', updateToken);
+    };
+    return {
+        RegisterEventHandlers: registerEventHandlers,
+    };
+}());
+on("ready",function(){
+    'use strict';
+    TokenImgHealth.RegisterEventHandlers();
+});
